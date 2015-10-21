@@ -6,12 +6,14 @@ import System.Environment
 import Text.HTML.Scalpel
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as C
+import Data.Maybe
+import Control.Applicative
 
 data Article = Article { aTitle :: ByteString
                        , aSnippets :: [Snippet]
                        }
 
-data Snippet = Snippet { snptFile :: ByteString
+data Snippet = Snippet { snptFile :: Maybe ByteString
                        , snptCode :: ByteString
                        } deriving Show
 
@@ -24,22 +26,22 @@ snippets = Article
            <*> chroots ("div" @: [hasClass "code-frame"]) snippet
 
 snippet :: Scraper ByteString Snippet
-snippet = Snippet <$> file <*> code
-    where file :: Scraper ByteString ByteString
+snippet = Snippet <$> file' <*> code
+    where file' = fmap Just file <|> return Nothing
           file = text $ "div" @: [hasClass "code-lang"]
-          code :: Scraper ByteString ByteString
           code = text "pre"
 
 printSnippetList :: Article -> IO ()
 printSnippetList article = do
   C.putStrLn $ (C.pack "Title: ") `C.append` aTitle article
   mapM_ print1 $ zip [1..] $ aSnippets article
-    where print1 (n, snpt) = C.putStrLn $ (C.pack $ show n ++ " ") `C.append` (snptFile snpt)
+    where print1 (n, snpt) = C.putStrLn $ (C.pack $ show n ++ " ") `C.append`
+                             (fromMaybe (C.pack "\"\"") $ snptFile snpt)
 
 runDownloadSnippets :: Article -> IO ()
 runDownloadSnippets article = do
   let snpt = head $ aSnippets article
-  C.putStrLn $ snptFile snpt
+  C.putStrLn $ fromMaybe (C.pack "\"\"") $ snptFile snpt
   C.putStrLn $ snptCode snpt
 
 run :: IO ()
