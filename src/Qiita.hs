@@ -6,6 +6,7 @@ import Control.Applicative
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as C
 import Data.Maybe
+import Options.Applicative
 import System.Environment
 import Text.HTML.Scalpel
 import Text.Printf
@@ -16,7 +17,7 @@ data Article = Article { aTitle :: ByteString
 
 data Snippet = Snippet { snptFile :: Maybe ByteString
                        , snptCode :: ByteString
-                       } deriving Show
+                       }
 
 allSnippets :: URL -> IO (Maybe Article)
 allSnippets url = scrapeURL url snippets
@@ -47,9 +48,15 @@ runDownloadSnippets article = do
   C.putStrLn $ snptFile' snpt
   C.putStrLn $ snptCode snpt
 
+--
+-- Entry point
+--
+
 run :: IO ()
 run = do
-  (url:_) <- getArgs
+  opts <- execParser myParserInfo
+  print opts
+  let url = qiitaUrl opts
   article <- allSnippets url
   maybe printError processSnippets article
     where
@@ -59,6 +66,38 @@ run = do
             0 -> putStrLn "No snippet found"
             1 -> runDownloadSnippets article
             _ -> printSnippetList article
+
+--
+-- Option parser
+--
+
+data Options = Options
+    { qiitaUrl :: String
+    , numSnippet :: Maybe Int
+    , outFileName :: Maybe String
+    , outDirName :: Maybe String
+    } deriving Show
+
+qiitaUrlP :: Parser String
+qiitaUrlP = argument str (metavar "URL")
+
+numSnippetP :: Parser Int
+numSnippetP = option auto $ mconcat [short 'n', long "num", help "# of snippet", metavar "INT"]
+
+outFileNameP :: Parser String
+outFileNameP = strOption $ mconcat [short 'o', long "output", help "output file", metavar "FILE"]
+
+outDirNameP :: Parser String
+outDirNameP = strOption $ mconcat [short 'd', long "dir", help "output directory", metavar "DIR"]
+
+optionsP :: Parser Options
+optionsP = (<*>) helper $ Options <$> qiitaUrlP
+           <*> optional numSnippetP
+           <*> optional outFileNameP
+           <*> optional outDirNameP
+
+myParserInfo :: ParserInfo Options
+myParserInfo = info optionsP $ mconcat [fullDesc, progDesc "Qiita Download", header "", footer ""]
 
 -- option -o (filename)
 -- option -n to specify snpt
