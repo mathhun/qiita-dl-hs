@@ -3,11 +3,14 @@ module Qiita
     ) where
 
 import Control.Applicative
+import Control.Monad (when)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as C
 import Data.Maybe
 import Options.Applicative
 import System.Environment
+import System.Exit
+import System.IO (stdout)
 import Text.HTML.Scalpel
 import Text.Printf
 
@@ -33,20 +36,35 @@ snippet = Snippet <$> file' <*> code
           file = text $ "div" @: [hasClass "code-lang"]
           code = text "pre"
 
+snptFile' :: Int -> Snippet -> ByteString
+snptFile' n snpt = num `C.append` file
+    where num = C.pack $ "[" ++ (show n) ++ "] "
+          file = fromMaybe (C.pack "\"\"") $ snptFile snpt
+
 printSnippetList :: Article -> IO ()
 printSnippetList article = do
   C.putStrLn $ (C.pack "Title: ") `C.append` aTitle article
   mapM_ print1 $ zip [1..] $ aSnippets article
-    where print1 (n, snpt) = putStrLn $ printf "[%s] %s" (show n) (C.unpack $ snptFile' snpt)
+    where print1 (n, snpt) = C.putStrLn $ snptFile' n snpt
 
-snptFile' :: Snippet -> ByteString
-snptFile' = fromMaybe (C.pack "\"\"") . snptFile
-
-runDownloadSnippets :: Article -> IO ()
-runDownloadSnippets article = do
-  let snpt = head $ aSnippets article
-  C.putStrLn $ snptFile' snpt
-  C.putStrLn $ snptCode snpt
+processSnippets :: Options -> Article -> IO ()
+processSnippets opts article = do
+  let snpt = aSnippets article
+      c = length snpt
+      n = fromMaybe (-1) (numSnippet opts)
+      idx = case (c, 0 <= n || n < c) of
+              (1, _) -> 0
+              (_, True) -> n
+              _ -> -1
+      out = fromMaybe stdout
+  when (c == 0) $ do
+    putStrLn "No snippet found"
+    exitFailure
+  if idx == -1 then
+      do printSnippetList article
+  else
+      do C.putStrLn $ snptFile' n $ snpt !! idx
+         C.putStrLn $ snptCode $ snpt !! idx
 
 --
 -- Entry point
@@ -55,17 +73,10 @@ runDownloadSnippets article = do
 run :: IO ()
 run = do
   opts <- execParser myParserInfo
-  print opts
-  let url = qiitaUrl opts
-  article <- allSnippets url
-  maybe printError processSnippets article
+  article <- allSnippets (qiitaUrl opts)
+  maybe printError (processSnippets opts) article
     where
       printError = putStrLn "ERROR: Could not scrape the URL"
-      processSnippets article = do
-          case length (aSnippets article) of
-            0 -> putStrLn "No snippet found"
-            1 -> runDownloadSnippets article
-            _ -> printSnippetList article
 
 --
 -- Option parser
@@ -98,8 +109,3 @@ optionsP = (<*>) helper $ Options <$> qiitaUrlP
 
 myParserInfo :: ParserInfo Options
 myParserInfo = info optionsP $ mconcat [fullDesc, progDesc "Qiita Download", header "", footer ""]
-
--- option -o (filename)
--- option -n to specify snpt
--- option -d (directory)
--- option -a to download all
