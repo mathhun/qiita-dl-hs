@@ -2,12 +2,12 @@ module Qiita
     ( run
     ) where
 
-import System.Environment
-import Text.HTML.Scalpel
+import Control.Applicative
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as C
 import Data.Maybe
-import Control.Applicative
+import System.Environment
+import Text.HTML.Scalpel
 import Text.Printf
 
 data Article = Article { aTitle :: ByteString
