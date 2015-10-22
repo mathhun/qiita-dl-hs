@@ -48,7 +48,7 @@ snptFile' n snpt = num `C.append` file
 printSnippetList :: Article -> IO ()
 printSnippetList article = do
   C.putStrLn $ (C.pack "Title: ") `C.append` aTitle article
-  mapM_ print1 $ zip [1..] $ aSnippets article
+  mapM_ print1 $ zip [0..] $ aSnippets article
     where print1 (n, snpt) = C.putStrLn $ snptFile' n snpt `C.append` preview snpt
           preview snpt = C.pack " " `C.append` takeText (snptCode snpt)
           takeText = T.encodeUtf8 . T.replace (T.pack "\n") (T.pack "\\n") . T.take 50 . T.decodeUtf8
@@ -72,20 +72,20 @@ processSnippets opts article = do
 
 writeSnippet :: Options -> [Snippet] -> Int -> IO ()
 writeSnippet opts snpts n = do
-  let file = snptFile' n $ snpts !! n
-      code = snptCode (snpts !! n)
-  case outFileName opts of
-    Just f -> do let path = getOutputPath opts f
-                 checkFileExists opts path
-                 C.writeFile path code
-                 markFileExecutable opts path
+  let snpt = snpts !! n
+      file = snptFile' n snpt
+      code = snptCode snpt
+  case getOutputPath opts (snptFile snpt) of
+    Just path -> do checkFileExists opts path
+                    C.writeFile path code
+                    markFileExecutable opts path
     Nothing -> mapM_ C.putStrLn [file, code]
 
-getOutputPath :: Options -> FilePath -> FilePath
-getOutputPath opts file =
-  case outDirName opts of
-    Just dir -> dir </> file
-    Nothing -> file
+getOutputPath :: Options -> Maybe ByteString -> Maybe FilePath
+getOutputPath opts file = do
+  base <- outFileName opts <|> fmap C.unpack file
+  dir <- outDirName opts <|> Just ""
+  return $ dir </> base
 
 checkFileExists :: Options -> FilePath -> IO ()
 checkFileExists opts path = do
