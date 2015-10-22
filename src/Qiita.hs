@@ -3,16 +3,18 @@ module Qiita
     ) where
 
 import Control.Applicative
-import Control.Monad (when)
+import Control.Monad (when, unless)
+import Data.Bits ((.|.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as C
-import Data.Maybe
+import Data.Maybe (fromMaybe)
 import Options.Applicative
-import System.Environment
-import System.Exit
-import System.IO (stdout)
+import System.Directory (doesFileExist, doesDirectoryExist, createDirectory)
+import System.FilePath.Posix ((</>), takeDirectory)
+import System.Exit (exitFailure)
+import System.IO (stderr)
+import System.Posix.Files
 import Text.HTML.Scalpel
-import Text.Printf
 
 data Article = Article { aTitle :: ByteString
                        , aSnippets :: [Snippet]
@@ -49,22 +51,52 @@ printSnippetList article = do
 
 processSnippets :: Options -> Article -> IO ()
 processSnippets opts article = do
-  let snpt = aSnippets article
-      c = length snpt
+  let snpts = aSnippets article
+      c = length snpts
       n = fromMaybe (-1) (numSnippet opts)
       idx = case (c, 0 <= n || n < c) of
               (1, _) -> 0
               (_, True) -> n
               _ -> -1
-      out = fromMaybe stdout
   when (c == 0) $ do
     putStrLn "No snippet found"
     exitFailure
   if idx == -1 then
-      do printSnippetList article
+      printSnippetList article
   else
-      do C.putStrLn $ snptFile' n $ snpt !! idx
-         C.putStrLn $ snptCode $ snpt !! idx
+      writeSnippet opts snpts idx
+
+writeSnippet :: Options -> [Snippet] -> Int -> IO ()
+writeSnippet opts snpts n = do
+  let file = snptFile' n $ snpts !! n
+      code = snptCode (snpts !! n)
+  case outFileName opts of
+    Just f -> do let path = getOutputPath opts f
+                 checkFileExists opts path
+                 C.writeFile path code
+                 markFileExecutable opts path
+    Nothing -> mapM_ C.putStrLn [file, code]
+
+getOutputPath :: Options -> FilePath -> FilePath
+getOutputPath opts file =
+  case outDirName opts of
+    Just dir -> dir </> file
+    Nothing -> file
+
+checkFileExists :: Options -> FilePath -> IO ()
+checkFileExists opts path = do
+  exists <- doesFileExist path
+  when (exists && not (forceOutput opts)) $ do
+    C.hPutStrLn stderr $ C.pack "File exists: " `C.append` C.pack path
+    exitFailure
+  let dir = takeDirectory path
+  dirExists <- doesDirectoryExist dir
+  unless (dirExists) $ createDirectory dir
+
+markFileExecutable :: Options -> FilePath -> IO ()
+markFileExecutable opts file = do
+  when (markExecutable opts) $ do
+    setFileMode file (stdFileMode .|. ownerExecuteMode)
 
 --
 -- Entry point
@@ -87,6 +119,8 @@ data Options = Options
     , numSnippet :: Maybe Int
     , outFileName :: Maybe String
     , outDirName :: Maybe String
+    , forceOutput :: Bool
+    , markExecutable :: Bool
     } deriving Show
 
 qiitaUrlP :: Parser String
@@ -101,11 +135,19 @@ outFileNameP = strOption $ mconcat [short 'o', long "output", help "output file"
 outDirNameP :: Parser String
 outDirNameP = strOption $ mconcat [short 'd', long "dir", help "output directory", metavar "DIR"]
 
+forceOutputP :: Parser Bool
+forceOutputP = switch $ mconcat [short 'f', long "force", help "force output"]
+
+executableP :: Parser Bool
+executableP = switch $ mconcat [short 'x', long "executable", help "executable"]
+
 optionsP :: Parser Options
 optionsP = (<*>) helper $ Options <$> qiitaUrlP
            <*> optional numSnippetP
            <*> optional outFileNameP
            <*> optional outDirNameP
+           <*> forceOutputP
+           <*> executableP
 
 myParserInfo :: ParserInfo Options
 myParserInfo = info optionsP $ mconcat [fullDesc, progDesc "Qiita Download", header "", footer ""]
