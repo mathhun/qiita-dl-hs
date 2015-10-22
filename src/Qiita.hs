@@ -8,6 +8,8 @@ import Data.Bits ((.|.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as C
 import Data.Maybe (fromMaybe)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Options.Applicative
 import System.Directory (doesFileExist, doesDirectoryExist, createDirectory)
 import System.FilePath.Posix ((</>), takeDirectory)
@@ -47,7 +49,9 @@ printSnippetList :: Article -> IO ()
 printSnippetList article = do
   C.putStrLn $ (C.pack "Title: ") `C.append` aTitle article
   mapM_ print1 $ zip [1..] $ aSnippets article
-    where print1 (n, snpt) = C.putStrLn $ snptFile' n snpt
+    where print1 (n, snpt) = C.putStrLn $ snptFile' n snpt `C.append` preview snpt
+          preview snpt = C.pack " " `C.append` takeText (snptCode snpt)
+          takeText = T.encodeUtf8 . T.replace (T.pack "\n") (T.pack "\\n") . T.take 50 . T.decodeUtf8
 
 processSnippets :: Options -> Article -> IO ()
 processSnippets opts article = do
